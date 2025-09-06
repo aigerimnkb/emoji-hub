@@ -1,0 +1,120 @@
+<%- include("partials/header") %>
+
+<div class="page">
+  <aside class="sidebar">
+    <h2>Категории</h2>
+    <ul id="categories" class="categories-list"></ul>
+    <button id="clearCategory" class="btn ghost">Показать все</button>
+  </aside>
+
+  <section class="content">
+    <div class="controls">
+      <input id="search" class="input" placeholder="Поиск по имени (например: cat, heart)" />
+      <select id="sort" class="input">
+        <option value="">Без сортировки</option>
+        <option value="name_asc">Имя A → Z</option>
+        <option value="name_desc">Имя Z → A</option>
+        <option value="category">По категории</option>
+      </select>
+    </div>
+
+    <div id="emojiGrid" class="emoji-grid" aria-live="polite"></div>
+  </section>
+</div>
+
+<script>
+
+(async function () {
+  const categoriesEl = document.getElementById('categories');
+  const gridEl = document.getElementById('emojiGrid');
+  const searchInput = document.getElementById('search');
+  const sortSelect = document.getElementById('sort');
+  const clearBtn = document.getElementById('clearCategory');
+
+  let allEmojis = [];
+  let activeCategory = '';
+
+  function escapeHtml(s = '') {
+    return String(s).replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  async function loadData() {
+    const [catsR, emojisR] = await Promise.all([
+      fetch('/api/categories').then(r => r.json()),
+      fetch('/api/emojis').then(r => r.json())
+    ]);
+    renderCategories(catsR);
+    allEmojis = emojisR;
+    applyFilters();
+  }
+
+  function renderCategories(cats) {
+    categoriesEl.innerHTML = cats.map(c => `<li><button class="cat-btn" data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button></li>`).join('');
+    categoriesEl.querySelectorAll('.cat-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        
+        activeCategory = btn.dataset.cat;
+        categoriesEl.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('active', b === btn));
+        applyFilters();
+      });
+    });
+  }
+
+  function getSymbol(e) {
+    
+    if (e.htmlCode && e.htmlCode.length) return e.htmlCode[0];
+    if (e.unicode && e.unicode.length) {
+      return e.unicode.map(u => String.fromCodePoint(parseInt(u.replace('U+', ''), 16))).join('');
+    }
+    return '';
+  }
+
+  function applyFilters() {
+    const q = searchInput.value.trim().toLowerCase();
+    const sort = sortSelect.value;
+
+    let filtered = allEmojis.filter(e => {
+      if (activeCategory && String(e.category) !== activeCategory) return false;
+      if (q && !String(e.name || '').toLowerCase().includes(q)) return false;
+      return true;
+    });
+
+    if (sort === 'name_asc') filtered.sort((a,b) => String(a.name).localeCompare(String(b.name)));
+    if (sort === 'name_desc') filtered.sort((a,b) => String(b.name).localeCompare(String(a.name)));
+    if (sort === 'category') filtered.sort((a,b) => String(a.category).localeCompare(String(b.category)));
+
+    renderGrid(filtered);
+  }
+
+  function renderGrid(items) {
+    if (!items || items.length === 0) {
+      gridEl.innerHTML = '<div class="empty">Ничего не найдено</div>';
+      return;
+    }
+
+    gridEl.innerHTML = items.map(e => {
+      const symbol = getSymbol(e);
+      const id = escapeHtml((e.name + ':' + e.category).toLowerCase().replace(/[^a-z0-9]+/g,'-'));
+      
+      return `
+        <a href="/emojis/${encodeURIComponent(id)}" class="emoji-card" title="${escapeHtml(e.name)}" aria-label="${escapeHtml(e.name)}">
+          <div class="emoji-symbol">${symbol}</div>
+          <div class="emoji-name">${escapeHtml(e.name)}</div>
+        </a>
+      `;
+    }).join('');
+  }
+
+  searchInput.addEventListener('input', () => applyFilters());
+  sortSelect.addEventListener('change', () => applyFilters());
+  clearBtn.addEventListener('click', () => {
+    activeCategory = '';
+    categoriesEl.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+    applyFilters();
+  });
+
+  await loadData();
+})();
+</script>
+
+<%- include("partials/footer") %>
